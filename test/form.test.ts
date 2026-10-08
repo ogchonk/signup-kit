@@ -20,3 +20,17 @@ describe("form helper", () => {
     expect(await submitSignup({ endpoint: "/api/x", email: "a@b.co", fetchImpl: down })).toBe("unavailable")
   })
 })
+
+describe("runContract options", () => {
+  it("swaps in a live address and can skip the no-mail row", async () => {
+    const { runContract } = await import("../src/testing")
+    const seen: string[] = []
+    const results = await runContract(async (r) => {
+      seen.push(await r.clone().text())
+      return new Response('{"ok":true}', { headers: { "cache-control": "no-store" } })
+    }, { address: "delivered@resend.dev", skipNoMail: true })
+    expect(results.some((r) => r.name.startsWith("no mail server"))).toBe(false)
+    expect(seen.some((b) => b.includes("delivered@resend.dev"))).toBe(true)
+    expect(seen.some((b) => b.includes("new@example.com"))).toBe(false)
+  })
+})

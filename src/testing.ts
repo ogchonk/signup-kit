@@ -216,13 +216,25 @@ export const contractFixtures: Fixture[] = [
 
 export type ContractResult = { name: string; pass: boolean; status: number; body: string; expected: Fixture }
 
+export type ContractOptions = {
+  url?: string
+  /** Address used for the new/repeat rows. Offline tests keep the default; live probes pass one with real MX (e.g. delivered@resend.dev). */
+  address?: string
+  /** Live probes skip the row that needs a domain with no mail server. */
+  skipNoMail?: boolean
+}
+
 /** Runs every fixture in order against a handler and reports each result. */
-export async function runContract(handler: (req: Request) => Promise<Response>, url = "https://site.test/api/signup"): Promise<ContractResult[]> {
+export async function runContract(handler: (req: Request) => Promise<Response>, opts: ContractOptions | string = {}): Promise<ContractResult[]> {
+  const o: ContractOptions = typeof opts === "string" ? { url: opts } : opts
+  const url = o.url ?? "https://site.test/api/signup"
   const out: ContractResult[] = []
-  for (const f of contractFixtures) {
+  for (const fixture of contractFixtures) {
+    if (o.skipNoMail && fixture.name.startsWith("no mail server")) continue
+    const f = o.address && typeof fixture.init.body === "string" ? { ...fixture, init: { ...fixture.init, body: fixture.init.body.replaceAll("new@example.com", o.address) } } : fixture
     const res = await handler(new Request(url, f.init as RequestInit))
     const body = await res.text()
-    out.push({ name: f.name, status: res.status, body, expected: f, pass: res.status === f.status && (f.body === undefined || body === f.body) && res.headers.get("cache-control") === "no-store" })
+    out.push({ name: f.name, status: res.status, body, expected: fixture, pass: res.status === f.status && (f.body === undefined || body === f.body) && res.headers.get("cache-control") === "no-store" })
   }
   return out
 }
