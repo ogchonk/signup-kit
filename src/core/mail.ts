@@ -72,15 +72,15 @@ export function idempotencyKey(site: string, pool: string, email: string, kind: 
 /** Plain text first, the same words in minimal HTML so the link is a button. */
 export function renderMail(copy: MailCopy, link: string, signer: string, noteFirst = false): { text: string; html: string } {
   const text = noteFirst
-    ? [copy.greeting, "", copy.body, "", copy.note, link, "", `— ${signer}`].join("\n")
-    : [copy.greeting, "", copy.body, "", link, "", copy.note, "", `— ${signer}`].join("\n")
+    ? [copy.greeting, "", copy.body, "", copy.note, link, "", signer].join("\n")
+    : [copy.greeting, "", copy.body, "", link, "", copy.note, "", signer].join("\n")
   const note = `<p style="color:#666;font-size:14px">${esc(copy.note)}</p>`
   const button = `<p><a href="${esc(link)}" style="display:inline-block;padding:10px 16px;border-radius:8px;background:#1a1917;color:#fff;text-decoration:none">${esc(copy.button)}</a></p>`
   const html = `<!doctype html><html><body style="margin:0;padding:24px;font:16px/1.5 -apple-system,Segoe UI,Helvetica,Arial,sans-serif;color:#1a1917;background:#fff">
 <p>${esc(copy.greeting)}</p>
 <p>${esc(copy.body)}</p>
 ${noteFirst ? note + button : button + note}
-<p>— ${esc(signer)}</p>
+<p>${esc(signer)}</p>
 </body></html>`
   return { text, html }
 }
