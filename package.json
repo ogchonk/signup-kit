@@ -1,0 +1,41 @@
+{
+  "name": "@ogchonk/signup-kit",
+  "version": "0.1.0",
+  "description": "Uniform waitlist and newsletter sign-up for Vercel sites (Next.js App Router or plain functions), backed by Supabase and Resend.",
+  "license": "MIT",
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "exports": {
+    "./core": { "types": "./dist/core.d.ts", "import": "./dist/core.js", "require": "./dist/core.cjs" },
+    "./next": { "types": "./dist/next.d.ts", "import": "./dist/next.js", "require": "./dist/next.cjs" },
+    "./node": { "types": "./dist/node.d.ts", "import": "./dist/node.js", "require": "./dist/node.cjs" },
+    "./form": { "types": "./dist/form.d.ts", "import": "./dist/form.js", "require": "./dist/form.cjs" },
+    "./testing": { "types": "./dist/testing.d.ts", "import": "./dist/testing.js", "require": "./dist/testing.cjs" },
+    "./form.iife.js": "./dist/form.iife.js",
+    "./sql/*": "./sql/*"
+  },
+  "files": ["dist", "sql", "templates"],
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run test --exclude test/db",
+    "test:db": "vitest run test/db",
+    "typecheck": "tsc --noEmit",
+    "lint": "tsc --noEmit -p tsconfig.lint.json"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.117.2",
+    "@vercel/functions": "^3.9.11",
+    "disposable-email-domains": "^1.0.62"
+  },
+  "peerDependencies": { "next": ">=16" },
+  "peerDependenciesMeta": { "next": { "optional": true } },
+  "devDependencies": {
+    "@types/node": "22.10.0",
+    "@types/pg": "8.11.10",
+    "next": "16.2.6",
+    "pg": "8.13.1",
+    "tsup": "8.5.0",
+    "typescript": "5.9.3",
+    "vitest": "3.2.4"
+  }
+}
