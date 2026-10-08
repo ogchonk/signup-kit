@@ -58,6 +58,32 @@ Per newsletter: `sql/020_newsletter_table.sql.tmpl`.
 
 Non-production traffic (`VERCEL_ENV` other than `production`) shares one `dev` pool of 5 sends a day.
 
+## Set up a new site
+
+`signup-kit setup` adds either process to a site in one run. Every step checks before it acts and
+prints `exists`, `created`, `skipped (…)`, `needs owner (…)` or `blocked (…)`. Re-running it on a site
+that is already set up changes nothing. Normally the `/add-waitlist` and `/add-newsletter` Claude Code
+skills run it; by hand:
+
+```
+node dist/cli.js setup --kind waitlist --domain example.com --dir ../example \
+  --repo owner/example --vercel-project example --signer "Example" --dry-run
+```
+
+Steps: preflight, Resend domain (stops at the free plan's 3-domain limit), Resend sending key,
+Supabase secret key, shared send pool, subscriber table, link-signing secret, bounce webhook
+(newsletter), Vercel firewall rule (`--firewall deferred` to skip by owner decision), mail DNS,
+Google Workspace alias, code wiring (branch, config and route files from `templates/`), pull request,
+live probe.
+
+Secrets are read at run time and never printed: `SUPABASE_ACCESS_TOKEN` (environment), a full-access
+Resend key in the macOS Keychain item `signup-kit-resend-admin`, and Namecheap credentials in
+`~/.namecheap-api.env`. Namecheap's `setHosts` replaces a domain's whole record set, so DNS writes keep
+every existing record, save a backup, and only run with `--confirm-dns <domain>`.
+
+Also: `signup-kit probe --url <deployment> --path <signup path>` (the behaviour contract against a live
+deployment) and `signup-kit health` (bounces and complaints per sending domain, last 7 days).
+
 ## Develop
 
 `pnpm test` (unit), `pnpm test:db` (real Postgres plus PostgREST: `DATABASE_URL` and
