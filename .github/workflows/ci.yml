@@ -16,18 +16,28 @@ jobs:
         ports: ["5432:5432"]
         options: >-
           --health-cmd "pg_isready -U postgres" --health-interval 2s --health-timeout 5s --health-retries 20
+      postgrest:
+        image: postgrest/postgrest:v12.2.8
+        env:
+          PGRST_DB_URI: postgres://postgres:t@postgres:5432/postgres
+          PGRST_DB_SCHEMAS: public
+          PGRST_DB_ANON_ROLE: service_role
+        ports: ["3000:3000"]
     env:
       DATABASE_URL: postgres://postgres:t@localhost:5432/postgres
+      POSTGREST_URL: http://localhost:3000
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
         with:
           version: 11.1.2
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Wait for PostgREST
+        run: for i in $(seq 1 60); do curl -s -o /dev/null localhost:3000/ && exit 0; sleep 1; done; exit 1
       - run: pnpm typecheck
       - run: pnpm lint
       - run: pnpm test

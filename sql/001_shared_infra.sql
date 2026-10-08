@@ -8,16 +8,20 @@ create table if not exists public.signup_send_quota (
 alter table public.signup_send_quota enable row level security;
 revoke all on public.signup_send_quota from anon, authenticated;
 
--- true only when a slot was taken; false (never null) when the pool is spent
+-- the UTC day the slot was charged to, or null when the pool is spent; give-back uses that day
+-- (v0.1.1 returned boolean; a guarded drop lets this file upgrade it in place)
+do $$ begin
+  if exists (select 1 from pg_proc where proname = 'signup_take_send' and pronamespace = 'public'::regnamespace
+             and prorettype = 'boolean'::regtype) then
+    drop function public.signup_take_send(text, int);
+  end if;
+end $$;
 create or replace function public.signup_take_send(p_pool text, p_limit int)
-returns boolean language sql security invoker set search_path = '' as $$
-  with t as (
-    insert into public.signup_send_quota as q (day, pool, sends)
-    values ((now() at time zone 'utc')::date, p_pool, 1)
-    on conflict (day, pool) do update set sends = q.sends + 1 where q.sends < p_limit
-    returning true
-  )
-  select coalesce((select * from t), false);
+returns date language sql security invoker set search_path = '' as $$
+  insert into public.signup_send_quota as q (day, pool, sends)
+  values ((now() at time zone 'utc')::date, p_pool, 1)
+  on conflict (day, pool) do update set sends = q.sends + 1 where q.sends < p_limit
+  returning day;
 $$;
 -- read-only check used before any address lookup
 create or replace function public.signup_pool_open(p_pool text, p_limit int)

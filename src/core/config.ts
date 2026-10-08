@@ -54,6 +54,7 @@ export type SiteInput = {
     confirmPage?: PageCopy
     confirmed?: PageCopy
     expired?: PageCopy
+    unavailable?: PageCopy
   }
 }
 
@@ -146,9 +147,13 @@ export function defineSite(input: SiteInput): Site {
   }
 }
 
-/** Pool and limit for this request. Outside Vercel production, traffic uses a separate small pool so tests and dev never spend real allowance. */
+/** One small pool shared by every site's non-production traffic (previews, local dev, QA). */
+export const DEV_POOL = "dev"
+export const DEV_POOL_LIMIT = 5
+
+/** Pool and limit for this request. Outside Vercel production, traffic uses the shared dev pool so tests and dev never spend real allowance. */
 export function poolFor(site: Site, env: Record<string, string | undefined> = process.env): { pool: string; limit: number } {
-  return env.VERCEL_ENV === "production" ? { pool: site.pool, limit: site.poolLimit } : { pool: `${site.pool}:dev`, limit: 5 }
+  return env.VERCEL_ENV === "production" ? { pool: site.pool, limit: site.poolLimit } : { pool: DEV_POOL, limit: DEV_POOL_LIMIT }
 }
 
 export type Secrets = { resendKey: string; tokenSecret: string; supabaseUrl: string; supabaseKey: string }

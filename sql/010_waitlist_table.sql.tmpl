@@ -1,4 +1,6 @@
--- signup-kit: waitlist table template; {{table}} must match ^[a-z_][a-z0-9_]{0,62}$. Idempotent; safe to re-run. Source of truth: plans/2026-10-08-signup-uniform-waitlist-newsletter.md
+-- signup-kit: waitlist table template (structure only); {{table}} must match ^[a-z_][a-z0-9_]{0,62}$. Idempotent; safe to re-run.
+-- Safe to apply while a site's old sign-up code is still live: it adds columns, a unique index only when none exists, RLS and revokes.
+-- The row checks that old code could violate are in 011, applied at that site's cutover. Source of truth: plans/2026-10-08-signup-uniform-waitlist-newsletter.md
 create table if not exists public.{{table}} (
   id uuid primary key default gen_random_uuid(),
   email text not null,
@@ -10,19 +12,10 @@ create table if not exists public.{{table}} (
 alter table public.{{table}} add column if not exists welcome_sent_at timestamptz;
 alter table public.{{table}} add column if not exists unsubscribed_at timestamptz;
 do $$ begin
+  -- an existing single-column unique index on email or lower(email) is reused (ntabc: the column; pf: lower(email))
   if not exists (select 1 from pg_indexes where schemaname = 'public' and tablename = '{{table}}'
-                 and indexdef ilike 'create unique index%(%email%)%') then
+                 and indexdef ~* '^create unique index [^ ]+ on public\.{{table}} using btree \((email|lower\(email\))\)$') then
     execute 'create unique index {{table}}_email_key on public.{{table}} (lower(email))';
-  end if;
-  if not exists (select 1 from pg_constraint where conname = '{{table}}_email_shape') then
-    execute 'alter table public.{{table}} add constraint {{table}}_email_shape
-             check (email = lower(email) and char_length(email) <= 254) not valid';
-    execute 'alter table public.{{table}} validate constraint {{table}}_email_shape';
-  end if;
-  if not exists (select 1 from pg_constraint where conname = '{{table}}_text_caps') then
-    execute 'alter table public.{{table}} add constraint {{table}}_text_caps
-             check (char_length(user_agent) <= 512 and char_length(referrer) <= 512) not valid';
-    execute 'alter table public.{{table}} validate constraint {{table}}_text_caps';
   end if;
 end $$;
 alter table public.{{table}} enable row level security;

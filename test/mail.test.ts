@@ -9,10 +9,13 @@ describe("mail", () => {
     expect(html).not.toContain('"onmouseover="')
   })
   it("keys confirmations by token hash so a resend later the same day is a new key", () => {
-    const a = idempotencyKey("rcdot", "a@b.co", "confirm", "hash1")
-    const b = idempotencyKey("rcdot", "a@b.co", "confirm", "hash2")
+    const a = idempotencyKey("rcdot", "rcdot-newsletter", "a@b.co", "confirm", "hash1")
+    const b = idempotencyKey("rcdot", "rcdot-newsletter", "a@b.co", "confirm", "hash2")
     expect(a).not.toBe(b)
-    expect(idempotencyKey("ntabc", "a@b.co", "welcome", "2026-10-08")).toBe(idempotencyKey("ntabc", "a@b.co", "welcome", "2026-10-08"))
+    expect(idempotencyKey("ntabc", "ntabc-waitlist", "a@b.co", "welcome", "2026-10-08")).toBe(idempotencyKey("ntabc", "ntabc-waitlist", "a@b.co", "welcome", "2026-10-08"))
+  })
+  it("a preview (dev pool) and a production send of the same mail get different keys (review S3)", () => {
+    expect(idempotencyKey("ntabc", "dev", "a@b.co", "welcome", "2026-10-08")).not.toBe(idempotencyKey("ntabc", "ntabc-waitlist", "a@b.co", "welcome", "2026-10-08"))
   })
   it("sends the Idempotency-Key and List-Unsubscribe headers to Resend", async () => {
     let seen: { headers: Record<string, string>; body: { headers?: Record<string, string> } } | null = null

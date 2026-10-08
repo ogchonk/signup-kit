@@ -19,23 +19,34 @@ describe("waitlist contract", () => {
     expect(res.status).toBe(503)
     expect(await res.text()).toBe('{"ok":false,"error":"unavailable"}')
   })
-  it("answers 503 when the database is down", async () => {
+  it("answers 503, never a crash, when a secret is malformed (createClient throws on a bad URL)", async () => {
+    const h = harness()
+    const res = await waitlistSignup(post(URL, { email: "a@example.com" }), site, { defer: h.deps.defer, resolver: h.deps.resolver, env: { ...h.deps.env, SUPABASE_URL: "nope" } })
+    expect(res.status).toBe(503)
+    expect(await res.text()).toBe('{"ok":false,"error":"unavailable"}')
+  })
+  it("answers the same 200 when the database is down: the insert runs after the reply (decision 10)", async () => {
     const h = harness()
     h.store.failNext("wlInsert")
-    expect((await waitlistSignup(post(URL, { email: "a@example.com" }), site, h.deps)).status).toBe(503)
+    const res = await waitlistSignup(post(URL, { email: "a@example.com" }), site, h.deps)
+    expect(await res.text()).toBe('{"ok":true}')
+    await h.settle()
+    expect(h.store.waitlist.get(site.table)?.get("a@example.com")).toBeUndefined()
+    expect(h.mailer.sent).toHaveLength(0)
   })
 })
 
 describe("waitlist behaviour", () => {
-  it("does the same work before the reply for a new and a repeat address", async () => {
+  it("touches the database only after the reply, for a new and a repeat address alike", async () => {
     const h = harness()
     await waitlistSignup(post(URL, { email: "a@example.com" }), site, h.deps)
-    const first = [...h.store.calls]
+    expect(h.store.calls).toEqual([])
     await h.settle()
     h.store.calls.length = 0
     await waitlistSignup(post(URL, { email: "a@example.com" }), site, h.deps)
-    expect(h.store.calls).toEqual(first)
-    expect(first).toEqual(["wlInsert"])
+    expect(h.store.calls).toEqual([])
+    await h.settle()
+    expect(h.store.calls[0]).toBe("wlInsert")
   })
   it("sends one welcome after the reply, with unsubscribe headers, from the site's address", async () => {
     const h = harness()
@@ -62,24 +73,44 @@ describe("waitlist behaviour", () => {
     await h.settle()
     expect(h.mailer.sent).toHaveLength(1)
   })
-  it("re-subscribes on a new sign-up after unsubscribing, with the welcome at most once per 24 h", async () => {
+  it("re-subscribes only together with a welcome, and a re-sign-up within 24 h of the last welcome changes nothing (decision 6, review M1)", async () => {
     let now = new Date("2026-10-08T12:00:00Z")
     const h = harness()
     const deps = { ...h.deps, now: () => now }
+    const row = () => h.store.waitlist.get(site.table)!.get("u@example.com")!
     await waitlistSignup(post(URL, { email: "u@example.com" }), site, deps)
     await h.settle()
-    h.store.waitlist.get(site.table)!.get("u@example.com")!.unsubscribed_at = now.toISOString()
-    now = new Date(now.getTime() + 60_000)
-    await waitlistSignup(post(URL, { email: "u@example.com" }), site, deps)
-    await h.settle()
-    expect(h.store.waitlist.get(site.table)!.get("u@example.com")!.unsubscribed_at).toBeNull()
     expect(h.mailer.sent).toHaveLength(1)
-    h.store.waitlist.get(site.table)!.get("u@example.com")!.unsubscribed_at = now.toISOString()
-    now = new Date(now.getTime() + WELCOME_GAP_MS)
+    const unsubbedAt = new Date(now.getTime() + 60_000).toISOString()
+    row().unsubscribed_at = unsubbedAt
+    now = new Date(now.getTime() + 2 * 60_000)
     const res = await waitlistSignup(post(URL, { email: "u@example.com" }), site, deps)
     expect(await res.text()).toBe('{"ok":true}')
     await h.settle()
+    expect(row().unsubscribed_at).toBe(unsubbedAt)
+    expect(h.mailer.sent).toHaveLength(1)
+    now = new Date(now.getTime() + WELCOME_GAP_MS)
+    await waitlistSignup(post(URL, { email: "u@example.com" }), site, deps)
+    await h.settle()
+    expect(row().unsubscribed_at).toBeNull()
     expect(h.mailer.sent).toHaveLength(2)
+  })
+  it("a re-sign-up whose welcome can't go (spent pool or failed send) leaves the address unsubscribed", async () => {
+    const h = harness()
+    const row = () => h.store.waitlist.get(site.table)!.get("v@example.com")!
+    await waitlistSignup(post(URL, { email: "v@example.com" }), site, h.deps)
+    await h.settle()
+    row().welcome_sent_at = "2026-01-01T00:00:00.000Z"
+    row().unsubscribed_at = "2026-01-02T00:00:00.000Z"
+    h.mailer.mode = "fail"
+    await waitlistSignup(post(URL, { email: "v@example.com" }), site, h.deps)
+    await h.settle()
+    expect(row()).toMatchObject({ unsubscribed_at: "2026-01-02T00:00:00.000Z", welcome_sent_at: "2026-01-01T00:00:00.000Z" })
+    h.mailer.mode = "ok"
+    for (let i = 0; i < 20; i++) await h.store.takeSend("ntabc-waitlist", 20)
+    await waitlistSignup(post(URL, { email: "v@example.com" }), site, h.deps)
+    await h.settle()
+    expect(row().unsubscribed_at).toBe("2026-01-02T00:00:00.000Z")
   })
   it("still saves the address and answers 200 when the pool is spent; the welcome is skipped", async () => {
     const h = harness()
@@ -105,13 +136,14 @@ describe("waitlist behaviour", () => {
   it("keeps the source to the allowlist and caps user agent and referrer", async () => {
     const h = harness()
     await waitlistSignup(post(URL, { email: "s@example.com", source: "evil" }, { "user-agent": "u".repeat(900) }), site, h.deps)
+    await h.settle()
     expect(h.store.waitlist.get(site.table)!.get("s@example.com")!.source).toBe("ntabc-landing")
   })
   it("uses the dev pool outside production", async () => {
     const h = harness({ VERCEL_ENV: "preview" })
     await waitlistSignup(post(URL, { email: "d@example.com" }), site, h.deps)
     await h.settle()
-    expect([...h.store.quota.keys()][0]).toMatch(/\|ntabc-waitlist:dev$/)
+    expect([...h.store.quota.keys()]).toEqual([expect.stringMatching(/\|dev$/)])
   })
 })
 
@@ -121,6 +153,7 @@ describe("waitlist unsubscribe", () => {
   it("GET renders a page and changes nothing", async () => {
     const h = harness()
     await waitlistSignup(post(URL, { email: "a@example.com" }), site, h.deps)
+    await h.settle()
     const res = await unsubscribe(new Request(link), site, h.deps)
     expect(res.status).toBe(200)
     expect(await res.text()).toContain("<form method=\"post\"")
@@ -129,6 +162,7 @@ describe("waitlist unsubscribe", () => {
   it("the button POST unsubscribes", async () => {
     const h = harness()
     await waitlistSignup(post(URL, { email: "a@example.com" }), site, h.deps)
+    await h.settle()
     const res = await unsubscribe(new Request(link, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: `e=a%40example.com&t=${tok}` }), site, h.deps)
     expect(res.status).toBe(200)
     expect(h.store.waitlist.get(site.table)!.get("a@example.com")!.unsubscribed_at).not.toBeNull()
@@ -136,6 +170,7 @@ describe("waitlist unsubscribe", () => {
   it("RFC 8058 one-click POST answers 200 with an empty body", async () => {
     const h = harness()
     await waitlistSignup(post(URL, { email: "a@example.com" }), site, h.deps)
+    await h.settle()
     const res = await unsubscribe(new Request(link, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: "List-Unsubscribe=One-Click" }), site, h.deps)
     expect(res.status).toBe(200)
     expect(await res.text()).toBe("")

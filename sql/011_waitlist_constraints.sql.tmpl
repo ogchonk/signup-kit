@@ -1,0 +1,15 @@
+-- signup-kit: waitlist row checks; {{table}} must match ^[a-z_][a-z0-9_]{0,62}$. Idempotent; safe to re-run.
+-- Apply at the site's cutover (after the package's code is live), or with 010 for a brand-new site:
+-- the package lowercases addresses and cuts user_agent/referrer to 512, but a site's old code may not.
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = '{{table}}_email_shape') then
+    execute 'alter table public.{{table}} add constraint {{table}}_email_shape
+             check (email = lower(email) and char_length(email) <= 254) not valid';
+    execute 'alter table public.{{table}} validate constraint {{table}}_email_shape';
+  end if;
+  if not exists (select 1 from pg_constraint where conname = '{{table}}_text_caps') then
+    execute 'alter table public.{{table}} add constraint {{table}}_text_caps
+             check (char_length(user_agent) <= 512 and char_length(referrer) <= 512) not valid';
+    execute 'alter table public.{{table}} validate constraint {{table}}_text_caps';
+  end if;
+end $$;

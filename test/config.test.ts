@@ -34,9 +34,9 @@ describe("defineSite", () => {
     const s = readSecrets(newsletterSite(), { NEWSLETTER_RESEND_API_KEY: "r", NEWSLETTER_SECRET: "s", SUPABASE_URL: "u", SUPABASE_SECRET_KEY: "k" })
     expect(s).toEqual({ resendKey: "r", tokenSecret: "s", supabaseUrl: "u", supabaseKey: "k" })
   })
-  it("gives non-production traffic its own small pool", () => {
+  it("sends every site's non-production traffic to one shared dev pool of 5 (review S4)", () => {
     expect(poolFor(waitlistSite(), { VERCEL_ENV: "production" })).toEqual({ pool: "ntabc-waitlist", limit: 20 })
-    expect(poolFor(waitlistSite(), { VERCEL_ENV: "preview" })).toEqual({ pool: "ntabc-waitlist:dev", limit: 5 })
-    expect(poolFor(waitlistSite(), {})).toEqual({ pool: "ntabc-waitlist:dev", limit: 5 })
+    expect(poolFor(waitlistSite(), { VERCEL_ENV: "preview" })).toEqual({ pool: "dev", limit: 5 })
+    expect(poolFor(waitlistSite({ site: "pf", table: "pf_waitlist_signups", url: "https://passwordfreedom.co", from: "PF <che@passwordfreedom.co>" }), {})).toEqual({ pool: "dev", limit: 5 })
   })
 })

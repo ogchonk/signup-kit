@@ -17,19 +17,31 @@ type Overrides = Omit<Deps, "defer">
 
 const deps = (o?: Overrides): Deps => ({ ...o, defer: (work) => after(work) })
 
-export const createWaitlistPost = (site: Site, o?: Overrides): Handler => (req) => waitlistSignup(req, site, deps(o))
-export const createNewsletterPost = (site: Site, o?: Overrides): Handler => (req) => newsletterSignup(req, site, deps(o))
-export const createNewsletterWebhook = (site: Site, o?: Overrides): Handler => (req) => newsletterWebhook(req, site, deps(o))
+/** Any unexpected throw becomes the contract's 503, never Next's 500 page — the same as the node adapter. */
+const guard =
+  (h: Handler): Handler =>
+  async (req) => {
+    try {
+      return await h(req)
+    } catch (err) {
+      console.error("[signup-kit] handler failed:", err instanceof Error ? err.message : "error")
+      return Response.json({ ok: false, error: "unavailable" }, { status: 503, headers: { "cache-control": "no-store" } })
+    }
+  }
+
+export const createWaitlistPost = (site: Site, o?: Overrides): Handler => guard((req) => waitlistSignup(req, site, deps(o)))
+export const createNewsletterPost = (site: Site, o?: Overrides): Handler => guard((req) => newsletterSignup(req, site, deps(o)))
+export const createNewsletterWebhook = (site: Site, o?: Overrides): Handler => guard((req) => newsletterWebhook(req, site, deps(o)))
 
 export function createUnsubscribe(site: Site, o?: Overrides): { GET: Handler; POST: Handler } {
-  const h: Handler = (req) => unsubscribe(req, site, deps(o))
+  const h: Handler = guard((req) => unsubscribe(req, site, deps(o)))
   return { GET: h, POST: h }
 }
 export const createWaitlistUnsubscribe = createUnsubscribe
 export const createNewsletterUnsubscribe = createUnsubscribe
 
 export function createNewsletterConfirm(site: Site, o?: Overrides): { GET: Handler; POST: Handler } {
-  const h: Handler = (req) => newsletterConfirm(req, site, deps(o))
+  const h: Handler = guard((req) => newsletterConfirm(req, site, deps(o)))
   return { GET: h, POST: h }
 }
 

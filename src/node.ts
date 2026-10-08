@@ -15,6 +15,9 @@ type NodeHandler = (req: IncomingMessage, res: ServerResponse) => Promise<void>
 type Overrides = Omit<Deps, "defer"> & { defer?: Deps["defer"] }
 type Core = (req: Request, site: Site, deps: Deps) => Promise<Response>
 
+const isSignup = (core: Core) => core === waitlistSignup || core === newsletterSignup
+const contentType = (req: IncomingMessage) => String(req.headers["content-type"] ?? "").split(";")[0]!.trim().toLowerCase()
+
 /** The webhook needs a bigger cap than a sign-up. */
 const capFor = (core: Core) => (core === newsletterWebhook ? 65536 : MAX_BODY_BYTES)
 
@@ -36,15 +39,17 @@ async function readStream(req: IncomingMessage, max: number): Promise<Uint8Array
   return total > max ? null : new Uint8Array(Buffer.concat(chunks))
 }
 
+/* A fixed base: the URL only supplies path and query to the handlers, and every link they build uses the
+   site's configured origin, so no request header is trusted for it. */
+const BASE = "https://signup-kit.invalid"
+
 function toRequest(req: IncomingMessage, body: Uint8Array | undefined): Request {
-  const host = String(req.headers["x-forwarded-host"] ?? req.headers.host ?? "localhost")
   const headers = new Headers()
   for (const [k, v] of Object.entries(req.headers)) {
     if (Array.isArray(v)) v.forEach((x) => headers.append(k, x))
     else if (v !== undefined) headers.set(k, v)
   }
-  /* The URL only supplies path and query to the handlers; every link they build uses the site's configured origin. */
-  return new Request(`https://${host}${req.url ?? "/"}`, { method: req.method, headers, body: body && body.byteLength ? (body as unknown as BodyInit) : undefined })
+  return new Request(`${BASE}${req.url ?? "/"}`, { method: req.method, headers, body: body && body.byteLength ? (body as unknown as BodyInit) : undefined })
 }
 
 async function write(res: ServerResponse, r: Response): Promise<void> {
@@ -60,6 +65,12 @@ function factory(core: Core) {
       try {
         let body: Uint8Array | undefined
         if (req.method !== "GET" && req.method !== "HEAD") {
+          /* Content type before size, the same order as the core (body.ts), so both adapters answer alike. */
+          if (isSignup(core) && contentType(req) !== "application/json") {
+            await write(res, Response.json({ ok: false, error: "invalid" }, { status: 415, headers: { "cache-control": "no-store" } }))
+            req.resume()
+            return
+          }
           const declared = Number(req.headers["content-length"] ?? 0)
           const max = capFor(core)
           const raw = declared > max ? null : await readStream(req, max)

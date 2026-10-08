@@ -12,8 +12,15 @@ export function page(copy: PageCopy, form?: { action: string; fields: Record<str
 <body><main><h1>${esc(copy.heading)}</h1><p>${esc(copy.body)}</p>${button}</main></body></html>`
 }
 
-export const htmlResponse = (body: string, status = 200) =>
-  new Response(body, { status, headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } })
+/** Landing pages load nothing, can't be framed, and post only to their own origin. */
+export const PAGE_HEADERS = {
+  "content-type": "text/html; charset=utf-8",
+  "cache-control": "no-store",
+  "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'",
+  "x-frame-options": "DENY",
+} as const
+
+export const htmlResponse = (body: string, status = 200) => new Response(body, { status, headers: PAGE_HEADERS })
 
 export const DEFAULT_PAGES: Record<string, PageCopy> = {
   unsubscribePage: { title: "Unsubscribe", heading: "Unsubscribe", body: "Press the button to stop these emails.", button: "Unsubscribe" },
@@ -22,4 +29,5 @@ export const DEFAULT_PAGES: Record<string, PageCopy> = {
   confirmPage: { title: "Confirm", heading: "Confirm your subscription", body: "Press the button to confirm.", button: "Confirm" },
   confirmed: { title: "Confirmed", heading: "You're on the list", body: "Thanks for confirming." },
   expired: { title: "Link expired", heading: "That link has expired", body: "Sign up again to get a fresh one." },
+  unavailable: { title: "Try again later", heading: "Something went wrong on our side", body: "Please try the link again in a few minutes." },
 }
