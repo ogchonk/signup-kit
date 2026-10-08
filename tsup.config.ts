@@ -12,4 +12,6 @@ export default defineConfig([
     target: "node20",
   },
   { entry: { "form.iife": "src/form-iife.ts" }, format: ["iife"], outExtension: () => ({ js: ".js" }), minify: true, target: "es2019" },
+  /* The setup command. ESM, run with node; the shebang lets `npx`/bin call it directly. */
+  { entry: { cli: "cli/main.ts" }, format: ["esm"], banner: { js: "#!/usr/bin/env node" }, target: "node20", noExternal: ["disposable-email-domains"] },
 ])

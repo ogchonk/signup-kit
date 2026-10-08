@@ -1,0 +1,4 @@
+{
+  "installCommand": "npm ci",
+  "functions": { "api/*.js": { "maxDuration": 30 } }
+}

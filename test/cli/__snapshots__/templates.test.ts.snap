@@ -1,0 +1,509 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`templates > renders Next newsletter (robbychoate.com shape) 1`] = `
+{
+  "app/api/newsletter/confirm/route.ts": "import { createNewsletterConfirm } from "@ogchonk/signup-kit/next"
+import { site } from "@/lib/signup-config"
+
+/* Confirmation link target. GET shows a page with one button (or redirects to the site's own page);
+   only the button's POST confirms, because mail scanners fetch every link. */
+
+export const runtime = "nodejs"
+export const maxDuration = 30
+
+export const { GET, POST } = createNewsletterConfirm(site)
+",
+  "app/api/newsletter/route.ts": "import { createNewsletterPost } from "@ogchonk/signup-kit/next"
+import { site } from "@/lib/signup-config"
+
+/* Newsletter sign-up (double opt-in) on the shared @ogchonk/signup-kit package. The reply comes right
+   after the body, honeypot, format and mail-server checks and the daily send pool; the row, the
+   confirmation email and any restore happen after the reply. */
+
+export const runtime = "nodejs"
+export const maxDuration = 30
+
+export const POST = createNewsletterPost(site)
+",
+  "app/api/newsletter/unsubscribe/route.ts": "import { createNewsletterUnsubscribe } from "@ogchonk/signup-kit/next"
+import { site } from "@/lib/signup-config"
+
+/* Unsubscribe link target. GET shows a page with one button and never changes anything; the button's
+   POST, or a mail client's RFC 8058 one-click POST, does. */
+
+export const runtime = "nodejs"
+export const maxDuration = 30
+
+export const { GET, POST } = createNewsletterUnsubscribe(site)
+",
+  "app/api/newsletter/webhook/route.ts": "import { createNewsletterWebhook } from "@ogchonk/signup-kit/next"
+import { site } from "@/lib/signup-config"
+
+/* Resend delivery events, Svix-signed. A bounced or complaining address is marked unsubscribed with
+   the reason; a failed write answers 500 so Resend retries. */
+
+export const runtime = "nodejs"
+export const maxDuration = 30
+
+export const POST = createNewsletterWebhook(site)
+",
+  "lib/signup-config.ts": "import { defineSite } from "@ogchonk/signup-kit/core"
+
+/* robbychoate.com newsletter settings for the shared @ogchonk/signup-kit package. Copy lives here;
+   behaviour lives in the package. No secrets in this file: they are read from the environment at
+   request time. */
+
+export const site = defineSite({
+  site: "rcdot",
+  kind: "newsletter",
+  url: "https://robbychoate.com",
+  table: "rc_subscribers",
+  from: "Robby Choate <che@robbychoate.com>",
+  replyTo: undefined,
+  signer: "Robby Choate",
+  pool: "rcdot-newsletter",
+  sources: ["rcdot"],
+  env: {
+    resendKey: "NEWSLETTER_RESEND_API_KEY",
+    tokenSecret: "NEWSLETTER_SECRET",
+  },
+  paths: {
+    unsubscribePage: "/api/newsletter/unsubscribe",
+    unsubscribeApi: "/api/newsletter/unsubscribe",
+    confirmPage: "/api/newsletter/confirm",
+    confirmApi: "/api/newsletter/confirm",
+  },
+  copy: {
+    confirm: {
+      subject: "Confirm your Robby Choate subscription",
+      greeting: "One more step.",
+      body: "Press the button to confirm you want the Robby Choate newsletter.",
+      button: "Confirm",
+      note: "The link works for 48 hours. If you didn't sign up, ignore this email.",
+    },
+    already: {
+      subject: "You're already on the Robby Choate list",
+      greeting: "Hello again.",
+      body: "This address is already subscribed to the Robby Choate newsletter.",
+      button: "Unsubscribe",
+      note: "If you'd rather stop getting it, you can unsubscribe here.",
+    },
+    confirmPage: {
+      title: "Confirm",
+      heading: "Confirm your subscription",
+      body: "Press the button to finish signing up.",
+      button: "Confirm",
+    },
+    confirmed: {
+      title: "Confirmed",
+      heading: "You're subscribed",
+      body: "Thanks. The next letter will reach this address.",
+    },
+    expired: {
+      title: "Link expired",
+      heading: "That link has expired",
+      body: "Sign up again and we'll send a fresh link.",
+    },
+    unsubscribePage: {
+      title: "Unsubscribe",
+      heading: "Leave the Robby Choate list",
+      body: "Press the button and we'll stop emailing this address.",
+      button: "Unsubscribe",
+    },
+    unsubscribed: {
+      title: "Unsubscribed",
+      heading: "You're off the list",
+      body: "We won't email this address again unless you sign up again.",
+    },
+    invalidLink: {
+      title: "Link not valid",
+      heading: "That link didn't work",
+      body: "It may be incomplete. Copy the whole link from the email, or reply to our email and we'll take you off the list.",
+    },
+    unavailable: {
+      title: "Try again later",
+      heading: "Something went wrong on our side",
+      body: "Try the link again in a few minutes.",
+    },
+  },
+})
+",
+}
+`;
+
+exports[`templates > renders Next waitlist with src/ (passwordfreedom.co shape) 1`] = `
+{
+  "src/app/api/waitlist/route.ts": "import { createWaitlistPost } from "@ogchonk/signup-kit/next"
+import { site } from "@/lib/signup-config"
+
+/* Waitlist sign-up on the shared @ogchonk/signup-kit package. The reply is the same for a new and a
+   repeat address; the insert and the welcome email run after the reply. runtime and maxDuration
+   stay literals in this file. */
+
+export const runtime = "nodejs"
+export const maxDuration = 30
+
+export const POST = createWaitlistPost(site)
+",
+  "src/app/api/waitlist/unsubscribe/route.ts": "import { createWaitlistUnsubscribe } from "@ogchonk/signup-kit/next"
+import { site } from "@/lib/signup-config"
+
+/* Unsubscribe link target. GET shows a page with one button and never changes anything (mail
+   scanners follow links); the button's POST, or a mail client's RFC 8058 one-click POST, does. */
+
+export const runtime = "nodejs"
+export const maxDuration = 30
+
+export const { GET, POST } = createWaitlistUnsubscribe(site)
+",
+  "src/lib/signup-config.ts": "import { defineSite } from "@ogchonk/signup-kit/core"
+
+/* passwordfreedom.co waitlist settings for the shared @ogchonk/signup-kit package. Copy lives here;
+   behaviour lives in the package. No secrets in this file: they are read from the environment at
+   request time. */
+
+export const site = defineSite({
+  site: "pf",
+  kind: "waitlist",
+  url: "https://passwordfreedom.co",
+  table: "pf_waitlist_signups",
+  from: "Password Freedom <che@passwordfreedom.co>",
+  replyTo: undefined,
+  signer: "Password Freedom",
+  pool: "pf-waitlist",
+  sources: ["hero-stripe", "closing-cta"],
+  paths: {
+    unsubscribePage: "/api/waitlist/unsubscribe",
+    unsubscribeApi: "/api/waitlist/unsubscribe",
+  },
+  copy: {
+    welcome: {
+      subject: "You're on the Password Freedom waitlist",
+      greeting: "Thanks for signing up.",
+      body: "You're on the Password Freedom waitlist. We'll write again when there's news to share.",
+      button: "Unsubscribe",
+      note: "If you didn't sign up, or you've changed your mind, you can unsubscribe here.",
+    },
+    unsubscribePage: {
+      title: "Unsubscribe",
+      heading: "Leave the Password Freedom list",
+      body: "Press the button and we'll stop emailing this address.",
+      button: "Unsubscribe",
+    },
+    unsubscribed: {
+      title: "Unsubscribed",
+      heading: "You're off the list",
+      body: "We won't email this address again unless you sign up again.",
+    },
+    invalidLink: {
+      title: "Link not valid",
+      heading: "That link didn't work",
+      body: "It may be incomplete. Copy the whole link from the email, or reply to our email and we'll take you off the list.",
+    },
+    unavailable: {
+      title: "Try again later",
+      heading: "Something went wrong on our side",
+      body: "Try the link again in a few minutes.",
+    },
+  },
+})
+",
+}
+`;
+
+exports[`templates > renders plain newsletter 1`] = `
+{
+  ".vercelignore": "test
+node_modules
+",
+  "api/confirm.js": "// GET shows the confirm page (changes nothing); only its button's POST confirms.
+module.exports = require('@ogchonk/signup-kit/node').createNewsletterConfirmHandler(require('../signup-config'))
+",
+  "api/subscribe.js": "// POST /api/subscribe: the shared newsletter sign-up (double opt-in, @ogchonk/signup-kit), configured in ../signup-config.js.
+module.exports = require('@ogchonk/signup-kit/node').createNewsletterHandler(require('../signup-config'))
+",
+  "api/unsubscribe.js": "// GET shows the unsubscribe page (changes nothing); POST unsubscribes, including RFC 8058 one-click.
+module.exports = require('@ogchonk/signup-kit/node').createNewsletterUnsubscribeHandler(require('../signup-config'))
+",
+  "api/webhook.js": "// Resend delivery events (Svix-signed): bounced or complaining addresses are marked unsubscribed.
+module.exports = require('@ogchonk/signup-kit/node').createNewsletterWebhookHandler(require('../signup-config'))
+",
+  "signup-config.js": "// letters.example newsletter settings for @ogchonk/signup-kit. Copy lives here; behaviour lives in the
+// shared package. No secrets in this file: they are read from the environment at request time.
+const { defineSite } = require('@ogchonk/signup-kit/core')
+
+module.exports = defineSite({
+  site: 'letters',
+  kind: 'newsletter',
+  url: 'https://letters.example',
+  table: 'letters_subscribers',
+  from: 'Letters <che@letters.example>',
+  replyTo: undefined,
+  signer: 'Letters',
+  pool: 'letters-newsletter',
+  sources: ['letters'],
+  paths: {
+    unsubscribePage: '/api/unsubscribe',
+    unsubscribeApi: '/api/unsubscribe',
+    confirmPage: '/api/confirm',
+    confirmApi: '/api/confirm',
+  },
+  copy: {
+    confirm: {
+      subject: 'Confirm your Letters subscription',
+      greeting: 'One more step.',
+      body: 'Press the button to confirm you want the Letters newsletter.',
+      button: 'Confirm',
+      note: "The link works for 48 hours. If you didn't sign up, ignore this email.",
+    },
+    already: {
+      subject: "You're already on the Letters list",
+      greeting: 'Hello again.',
+      body: 'This address is already subscribed to the Letters newsletter.',
+      button: 'Unsubscribe',
+      note: "If you'd rather stop getting it, you can unsubscribe here.",
+    },
+    confirmPage: {
+      title: 'Confirm',
+      heading: 'Confirm your subscription',
+      body: 'Press the button to finish signing up.',
+      button: 'Confirm',
+    },
+    confirmed: {
+      title: 'Confirmed',
+      heading: "You're subscribed",
+      body: 'Thanks. The next letter will reach this address.',
+    },
+    expired: {
+      title: 'Link expired',
+      heading: 'That link has expired',
+      body: "Sign up again and we'll send a fresh link.",
+    },
+    unsubscribePage: {
+      title: 'Unsubscribe',
+      heading: 'Leave the Letters list',
+      body: "Press the button and we'll stop emailing this address.",
+      button: 'Unsubscribe',
+    },
+    unsubscribed: {
+      title: 'Unsubscribed',
+      heading: "You're off the list",
+      body: "We won't email this address again unless you sign up again.",
+    },
+    invalidLink: {
+      title: 'Link not valid',
+      heading: "That link didn't work",
+      body: "It may be incomplete. Copy the whole link from the email, or reply to our email and we'll take you off the list.",
+    },
+    unavailable: {
+      title: 'Try again later',
+      heading: 'Something went wrong on our side',
+      body: 'Try the link again in a few minutes.',
+    },
+  },
+})
+",
+  "test/subscribe.test.js": "// Gate for this site's sign-up: runs the shared behaviour contract from @ogchonk/signup-kit against
+// the site config, checks the handlers answer 503 (never crash) without secrets, and checks form.js
+// is the installed package build. Run with: npm test
+const { test } = require('node:test')
+const assert = require('node:assert/strict')
+const crypto = require('node:crypto')
+const fs = require('node:fs')
+const path = require('node:path')
+const { Readable } = require('node:stream')
+const { runContract, fakeStore, fakeMailer, fakeResolver, fakeEnv } = require('@ogchonk/signup-kit/testing')
+
+const root = path.join(__dirname, '..')
+
+async function invoke(handler, request) {
+  const raw = request.body ? Buffer.from(await request.arrayBuffer()) : Buffer.alloc(0)
+  const req = Readable.from(raw.length ? [raw] : [])
+  req.method = request.method
+  req.url = new URL(request.url).pathname + new URL(request.url).search
+  req.headers = Object.fromEntries(request.headers)
+  if (raw.length && !req.headers['content-length']) req.headers['content-length'] = String(raw.length)
+  return new Promise((resolve) => {
+    const headers = new Headers()
+    const res = {
+      statusCode: 200,
+      headersSent: false,
+      setHeader(k, v) { headers.set(k, String(v)) },
+      end(b) { res.headersSent = true; resolve(new Response(b ?? null, { status: res.statusCode, headers })) },
+    }
+    Promise.resolve(handler(req, res)).catch((e) => resolve(new Response(String(e), { status: 599 })))
+  })
+}
+
+const withoutSecrets = () => {
+  for (const k of ['RESEND_API_KEY', 'SIGNUP_SECRET', 'SUPABASE_URL', 'SUPABASE_SECRET_KEY', 'SUPABASE_SERVICE_ROLE_KEY']) delete process.env[k]
+}
+
+test('the full contract holds for this site config (fake database and mail)', async () => {
+  const site = require('../signup-config')
+  const { createNewsletterHandler } = require('@ogchonk/signup-kit/node')
+  const store = fakeStore()
+  const mailer = fakeMailer()
+  const pending = []
+  const handler = createNewsletterHandler(site, { store, mailer, resolver: fakeResolver(['nomail.example']), env: fakeEnv({ VERCEL_ENV: 'production' }), defer: (w) => pending.push(w()) })
+  const results = await runContract((r) => invoke(handler, r))
+  await Promise.all(pending)
+  for (const r of results) assert.ok(r.pass, \`\${r.name}: got \${r.status} \${r.body}\`)
+  assert.equal(mailer.sent.length, 1, 'one confirmation for one new address')
+  assert.match(mailer.sent[0].from, /<che@letters\\.example>$/)
+})
+
+test('/api/subscribe answers 503 without secrets, never a crash', async () => {
+  withoutSecrets()
+  const handler = require('../api/subscribe.js')
+  const valid = await invoke(handler, new Request('https://letters.example/api/subscribe', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"email":"someone@gmail.com"}' }))
+  assert.equal(valid.status, 503)
+  assert.equal(await valid.text(), '{"ok":false,"error":"unavailable"}')
+})
+
+test('form.js is the installed package build, byte for byte', () => {
+  const sha = (p) => crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex')
+  const installed = require.resolve('@ogchonk/signup-kit/form.iife.js')
+  assert.equal(sha(path.join(root, 'form.js')), sha(installed), 'run: cp node_modules/@ogchonk/signup-kit/dist/form.iife.js form.js')
+})
+",
+  "vercel.json": "{
+  "installCommand": "npm ci",
+  "functions": { "api/*.js": { "maxDuration": 30 } }
+}
+",
+}
+`;
+
+exports[`templates > renders plain waitlist (ntabc.co shape) 1`] = `
+{
+  ".vercelignore": "test
+node_modules
+",
+  "api/subscribe.js": "// POST /api/subscribe: the shared waitlist sign-up (@ogchonk/signup-kit), configured in ../signup-config.js.
+module.exports = require('@ogchonk/signup-kit/node').createWaitlistHandler(require('../signup-config'))
+",
+  "api/unsubscribe.js": "// GET shows the unsubscribe page (changes nothing); POST unsubscribes, including RFC 8058 one-click.
+module.exports = require('@ogchonk/signup-kit/node').createWaitlistUnsubscribeHandler(require('../signup-config'))
+",
+  "signup-config.js": "// ntabc.co waitlist settings for @ogchonk/signup-kit. Copy lives here; behaviour lives in the
+// shared package. No secrets in this file: they are read from the environment at request time.
+const { defineSite } = require('@ogchonk/signup-kit/core')
+
+module.exports = defineSite({
+  site: 'ntabc',
+  kind: 'waitlist',
+  url: 'https://ntabc.co',
+  table: 'ntabc_waitlist_signups',
+  from: 'NTABC <che@ntabc.co>',
+  replyTo: 'owner@example.com',
+  signer: 'NTABC',
+  pool: 'ntabc-waitlist',
+  sources: ['ntabc-landing'],
+  paths: {
+    unsubscribePage: '/api/unsubscribe',
+    unsubscribeApi: '/api/unsubscribe',
+  },
+  copy: {
+    welcome: {
+      subject: "You're on the NTABC waitlist",
+      greeting: 'Thanks for signing up.',
+      body: "You're on the NTABC waitlist. We'll write again when there's news to share.",
+      button: 'Unsubscribe',
+      note: "If you didn't sign up, or you've changed your mind, you can unsubscribe here.",
+    },
+    unsubscribePage: {
+      title: 'Unsubscribe',
+      heading: 'Leave the NTABC list',
+      body: "Press the button and we'll stop emailing this address.",
+      button: 'Unsubscribe',
+    },
+    unsubscribed: {
+      title: 'Unsubscribed',
+      heading: "You're off the list",
+      body: "We won't email this address again unless you sign up again.",
+    },
+    invalidLink: {
+      title: 'Link not valid',
+      heading: "That link didn't work",
+      body: "It may be incomplete. Copy the whole link from the email, or reply to our email and we'll take you off the list.",
+    },
+    unavailable: {
+      title: 'Try again later',
+      heading: 'Something went wrong on our side',
+      body: 'Try the link again in a few minutes.',
+    },
+  },
+})
+",
+  "test/subscribe.test.js": "// Gate for this site's sign-up: runs the shared behaviour contract from @ogchonk/signup-kit against
+// the site config, checks the handlers answer 503 (never crash) without secrets, and checks form.js
+// is the installed package build. Run with: npm test
+const { test } = require('node:test')
+const assert = require('node:assert/strict')
+const crypto = require('node:crypto')
+const fs = require('node:fs')
+const path = require('node:path')
+const { Readable } = require('node:stream')
+const { runContract, fakeStore, fakeMailer, fakeResolver, fakeEnv } = require('@ogchonk/signup-kit/testing')
+
+const root = path.join(__dirname, '..')
+
+async function invoke(handler, request) {
+  const raw = request.body ? Buffer.from(await request.arrayBuffer()) : Buffer.alloc(0)
+  const req = Readable.from(raw.length ? [raw] : [])
+  req.method = request.method
+  req.url = new URL(request.url).pathname + new URL(request.url).search
+  req.headers = Object.fromEntries(request.headers)
+  if (raw.length && !req.headers['content-length']) req.headers['content-length'] = String(raw.length)
+  return new Promise((resolve) => {
+    const headers = new Headers()
+    const res = {
+      statusCode: 200,
+      headersSent: false,
+      setHeader(k, v) { headers.set(k, String(v)) },
+      end(b) { res.headersSent = true; resolve(new Response(b ?? null, { status: res.statusCode, headers })) },
+    }
+    Promise.resolve(handler(req, res)).catch((e) => resolve(new Response(String(e), { status: 599 })))
+  })
+}
+
+const withoutSecrets = () => {
+  for (const k of ['RESEND_API_KEY', 'SIGNUP_SECRET', 'SUPABASE_URL', 'SUPABASE_SECRET_KEY', 'SUPABASE_SERVICE_ROLE_KEY']) delete process.env[k]
+}
+
+test('the full contract holds for this site config (fake database and mail)', async () => {
+  const site = require('../signup-config')
+  const { createWaitlistHandler } = require('@ogchonk/signup-kit/node')
+  const store = fakeStore()
+  const mailer = fakeMailer()
+  const pending = []
+  const handler = createWaitlistHandler(site, { store, mailer, resolver: fakeResolver(['nomail.example']), env: fakeEnv({ VERCEL_ENV: 'production' }), defer: (w) => pending.push(w()) })
+  const results = await runContract((r) => invoke(handler, r))
+  await Promise.all(pending)
+  for (const r of results) assert.ok(r.pass, \`\${r.name}: got \${r.status} \${r.body}\`)
+  assert.equal(mailer.sent.length, 1, 'one welcome for one new address')
+  assert.match(mailer.sent[0].from, /<che@ntabc\\.co>$/)
+})
+
+test('/api/subscribe answers 503 without secrets, never a crash', async () => {
+  withoutSecrets()
+  const handler = require('../api/subscribe.js')
+  const valid = await invoke(handler, new Request('https://ntabc.co/api/subscribe', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"email":"someone@gmail.com"}' }))
+  assert.equal(valid.status, 503)
+  assert.equal(await valid.text(), '{"ok":false,"error":"unavailable"}')
+})
+
+test('form.js is the installed package build, byte for byte', () => {
+  const sha = (p) => crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex')
+  const installed = require.resolve('@ogchonk/signup-kit/form.iife.js')
+  assert.equal(sha(path.join(root, 'form.js')), sha(installed), 'run: cp node_modules/@ogchonk/signup-kit/dist/form.iife.js form.js')
+})
+",
+  "vercel.json": "{
+  "installCommand": "npm ci",
+  "functions": { "api/*.js": { "maxDuration": 30 } }
+}
+",
+}
+`;
