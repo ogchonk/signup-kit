@@ -43,11 +43,12 @@ export function fakeStore(): FakeStore {
     },
     async takeSend(pool, limit) {
       op("takeSend")
-      const k = qk(pool, today())
+      const day = today()
+      const k = qk(pool, day)
       const n = quota.get(k) ?? 0
-      if (n >= limit) return false
+      if (n >= limit) return null
       quota.set(k, n + 1)
-      return true
+      return day
     },
     async giveBack(pool, day) {
       op("giveBack")
@@ -66,22 +67,21 @@ export function fakeStore(): FakeStore {
       const r = wl(table).get(email)
       return r ? { unsubscribed_at: r.unsubscribed_at, welcome_sent_at: r.welcome_sent_at } : null
     },
-    async wlResubscribe(table, email) {
-      op("wlResubscribe")
-      const r = wl(table).get(email)
-      if (r) r.unsubscribed_at = null
-    },
-    async wlClaimWelcome(table, email, now, previous) {
+    async wlClaimWelcome(table, email, now, previous, resubscribe) {
       op("wlClaimWelcome")
       const r = wl(table).get(email)
-      if (!r || r.unsubscribed_at !== null || r.welcome_sent_at !== previous) return false
+      if (!r || r.welcome_sent_at !== previous) return false
+      if (resubscribe ? r.unsubscribed_at === null : r.unsubscribed_at !== null) return false
       r.welcome_sent_at = now
+      if (resubscribe) r.unsubscribed_at = null
       return true
     },
-    async wlReleaseWelcome(table, email, claimed, previous) {
+    async wlReleaseWelcome(table, email, claimed, previous, unsubscribedAt) {
       op("wlReleaseWelcome")
       const r = wl(table).get(email)
-      if (r && r.welcome_sent_at === claimed) r.welcome_sent_at = previous
+      if (!r || r.welcome_sent_at !== claimed) return
+      r.welcome_sent_at = previous
+      if (unsubscribedAt !== undefined) r.unsubscribed_at = unsubscribedAt
     },
     async wlUnsubscribe(table, email, now) {
       op("wlUnsubscribe")

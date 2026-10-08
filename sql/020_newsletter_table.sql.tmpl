@@ -18,7 +18,7 @@ alter table public.{{table}} add column if not exists confirm_sends smallint not
 alter table public.{{table}} add column if not exists unsubscribe_reason text;
 do $$ begin
   if not exists (select 1 from pg_indexes where schemaname = 'public' and tablename = '{{table}}'
-                 and indexdef ilike 'create unique index%(%email%)%') then
+                 and indexdef ~* '^create unique index [^ ]+ on public\.{{table}} using btree \((email|lower\(email\))\)$') then
     execute 'alter table public.{{table}} add constraint {{table}}_email_key unique (email)';
   end if;
   if not exists (select 1 from pg_constraint where conname = '{{table}}_email_lower') then

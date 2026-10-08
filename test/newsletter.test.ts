@@ -3,7 +3,9 @@ import { describe, expect, it } from "vitest"
 import { CONFIRMED_COOLDOWN_MS, newsletterConfirm, newsletterSignup, newsletterWebhook, unsubscribe } from "../src/core/handlers"
 import { runContract } from "../src/testing"
 import { DNS_MS } from "../src/core/email"
-import { ROUTE_MAX_DURATION_S, worstCaseMs } from "../src/core/timeout"
+import { DB_MS, ROUTE_MAX_DURATION_S, SEND_MS } from "../src/core/timeout"
+import { waitlistSignup } from "../src/core/handlers"
+import { waitlistSite } from "./helpers"
 import { harness, newsletterSite, post } from "./helpers"
 
 const site = newsletterSite()
@@ -26,8 +28,41 @@ describe("newsletter contract", () => {
     const h = harness()
     for (const r of await runContract((req) => newsletterSignup(req, site, h.deps), URL)) expect(r, r.name).toMatchObject({ pass: true })
   })
-  it("the summed per-call budgets fit inside the route's maxDuration (audit fault 2)", () => {
-    expect(worstCaseMs(DNS_MS)).toBeLessThanOrEqual(ROUTE_MAX_DURATION_S * 1000)
+  it("the worst path's counted calls, times each call's budget, fit inside maxDuration (audit fault 2, review S1)", async () => {
+    /* Each scenario drives the longest path through the real handler code — a send that fails, so the slot is
+       given back and the row restored — and counts the database calls and send attempts it makes. */
+    const worst: { name: string; db: number; sends: number }[] = []
+    const measure = async (name: string, h: ReturnType<typeof harness>, run: () => Promise<unknown>) => {
+      let sends = 0
+      const send = h.mailer.send
+      h.mailer.send = async (m) => (sends++, send(m))
+      h.store.calls.length = 0
+      await run()
+      await h.settle()
+      h.mailer.send = send
+      worst.push({ name, db: h.store.calls.length, sends })
+    }
+    const confirmed = harness()
+    await signUp(confirmed, "c@example.com")
+    Object.assign(rows(confirmed).get("c@example.com")!, { status: "confirmed", confirm_sent_at: null })
+    confirmed.mailer.mode = "fail"
+    await measure("newsletter confirmed, send fails", confirmed, () => newsletterSignup(post(URL, { email: "c@example.com" }), site, confirmed.deps))
+    const pending = harness()
+    await signUp(pending, "p@example.com", { ...pending.deps, now: () => new Date(Date.now() - 2 * 60 * 60 * 1000) })
+    pending.mailer.mode = "fail"
+    await measure("newsletter pending, send fails", pending, () => newsletterSignup(post(URL, { email: "p@example.com" }), site, pending.deps))
+    const wl = harness()
+    const wsite = waitlistSite()
+    await waitlistSignup(post(URL, { email: "w@example.com" }), wsite, wl.deps)
+    await wl.settle()
+    Object.assign(wl.store.waitlist.get(wsite.table)!.get("w@example.com")!, { welcome_sent_at: "2026-01-01T00:00:00.000Z", unsubscribed_at: "2026-01-02T00:00:00.000Z" })
+    wl.mailer.mode = "fail"
+    await measure("waitlist re-sign-up, send fails", wl, () => waitlistSignup(post(URL, { email: "w@example.com" }), wsite, wl.deps))
+    for (const w of worst) {
+      expect(w.sends, w.name).toBe(1)
+      expect(w.db, w.name).toBeGreaterThanOrEqual(6)
+      expect(DNS_MS + w.db * DB_MS + w.sends * SEND_MS, w.name).toBeLessThanOrEqual(ROUTE_MAX_DURATION_S * 1000)
+    }
   })
 })
 
@@ -184,5 +219,31 @@ describe("newsletter unsubscribe and webhook", () => {
     expect((await newsletterWebhook(req(signed(big, secret), big), site, h.deps)).status).toBe(413)
     h.store.failNext("nlMarkUndeliverable")
     expect((await newsletterWebhook(req(signed(body, secret)), site, h.deps)).status).toBe(500)
+  })
+})
+
+describe("unavailable and page headers (review S5, S7)", () => {
+  it("confirm and unsubscribe answer 503 when settings are missing or the database is down", async () => {
+    const h = harness()
+    const form = (url: string, body: string) => new Request(url, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body })
+    const t = "A".repeat(43)
+    expect((await newsletterConfirm(form("https://robbychoate.com/api/newsletter/confirm", `t=${t}`), site, { ...h.deps, env: {} })).status).toBe(503)
+    h.store.failNext("nlConfirm")
+    expect((await newsletterConfirm(form("https://robbychoate.com/api/newsletter/confirm", `t=${t}`), site, h.deps)).status).toBe(503)
+    const tok = createHmac("sha256", "test-secret").update("a@example.com").digest("base64url")
+    const link = `https://robbychoate.com/api/newsletter/unsubscribe?e=a%40example.com&t=${tok}`
+    expect((await unsubscribe(form(link, `e=a%40example.com&t=${tok}`), site, { ...h.deps, env: {} })).status).toBe(503)
+    h.store.failNext("nlUnsubscribe")
+    expect((await unsubscribe(form(link, `e=a%40example.com&t=${tok}`), site, h.deps)).status).toBe(503)
+    h.store.failNext("nlUnsubscribe")
+    expect((await unsubscribe(form(link, "List-Unsubscribe=One-Click"), site, h.deps)).status).toBe(503)
+  })
+  it("landing pages can't be framed and load nothing", async () => {
+    const h = harness()
+    const wsite = waitlistSite()
+    const tok = createHmac("sha256", "test-secret").update("a@example.com").digest("base64url")
+    const res = await unsubscribe(new Request(`https://ntabc.co/api/unsubscribe?e=a%40example.com&t=${tok}`), wsite, h.deps)
+    expect(res.headers.get("content-security-policy")).toBe("default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'")
+    expect(res.headers.get("x-frame-options")).toBe("DENY")
   })
 })

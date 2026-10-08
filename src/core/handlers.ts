@@ -4,7 +4,7 @@ import { readCapped, readForm, readJson } from "./body"
 import { acceptableAddress, isEmail, normalizeEmail, type Resolver } from "./email"
 import { idempotencyKey, renderMail, resendMailer, unsubscribeHeaders, type Mailer } from "./mail"
 import { supabaseStore } from "./supabase-store"
-import { utcDay, type NlRow, type Store } from "./store"
+import type { NlRow, Store } from "./store"
 import { DEFAULT_PAGES, htmlResponse, page } from "./html"
 import { TOKEN_RE, confirmUrl, hashToken, newConfirmToken, unsubscribeApiUrl, unsubscribePageUrl, unsubscribeTokenValid } from "./tokens"
 
@@ -42,17 +42,23 @@ const UNAVAILABLE = () => json(503, { ok: false, error: "unavailable" })
 
 type Ctx = { site: Site; secrets: Secrets; store: Store; mailer: Mailer; now: () => Date; env: Record<string, string | undefined> }
 
+/** Null when a secret is missing or malformed (createClient throws on a bad URL): the caller answers 503, never a crash. */
 function context(site: Site, deps: Deps): Ctx | null {
-  const env = deps.env ?? process.env
-  const secrets = readSecrets(site, env)
-  if (!secrets) return null
-  return {
-    site,
-    secrets,
-    env,
-    store: deps.store ?? supabaseStore(secrets.supabaseUrl, secrets.supabaseKey),
-    mailer: deps.mailer ?? resendMailer(secrets.resendKey),
-    now: deps.now ?? (() => new Date()),
+  try {
+    const env = deps.env ?? process.env
+    const secrets = readSecrets(site, env)
+    if (!secrets) return null
+    return {
+      site,
+      secrets,
+      env,
+      store: deps.store ?? supabaseStore(secrets.supabaseUrl, secrets.supabaseKey),
+      mailer: deps.mailer ?? resendMailer(secrets.resendKey),
+      now: deps.now ?? (() => new Date()),
+    }
+  } catch (err) {
+    console.error("[signup-kit] configuration invalid:", err instanceof Error ? err.message : "error")
+    return null
   }
 }
 
@@ -92,51 +98,47 @@ export async function waitlistSignup(req: Request, site: Site, deps: Deps): Prom
   const ctx = context(site, deps)
   if (!ctx) return UNAVAILABLE()
   const { email, body } = parsed
-  let outcome: "new" | "repeat"
-  try {
-    /* One insert, the same for a new and a repeat address: the reply never depends on which it was. */
-    outcome = await ctx.store.wlInsert(site.table, {
-      email,
-      source: cleanSource(site, body.source),
-      user_agent: cap(req.headers.get("user-agent")),
-      referrer: cap(req.headers.get("referer")),
-    })
-  } catch (err) {
-    console.error("[signup-kit] waitlist insert failed:", err instanceof Error ? err.message : "error")
-    return UNAVAILABLE()
+  const row = {
+    email,
+    source: cleanSource(site, body.source),
+    user_agent: cap(req.headers.get("user-agent")),
+    referrer: cap(req.headers.get("referer")),
   }
-  later(deps, "waitlist welcome", () => afterWaitlistSignup(ctx, email, outcome))
+  /* Nothing that depends on the address happens before the reply, not even the insert: a new row commits
+     and flushes, a duplicate aborts, and that timing difference would show who is on the list (decision 10,
+     extended to waitlists). The cost: if the database is down the visitor still sees success; the failure is
+     logged without the address. */
+  later(deps, "waitlist sign-up", async () => afterWaitlistSignup(ctx, email, await ctx.store.wlInsert(site.table, row)))
   return OK()
 }
 
 async function afterWaitlistSignup(ctx: Ctx, email: string, outcome: "new" | "repeat"): Promise<void> {
-  const { store, site } = ctx
-  let previous: string | null = null
-  if (outcome === "repeat") {
-    const row = await store.wlGet(site.table, email)
-    if (!row) return
-    if (row.unsubscribed_at) {
-      /* Signing up again after unsubscribing puts the address back on the list (owner, 2026-10-08). */
-      await store.wlResubscribe(site.table, email)
-    } else if (row.welcome_sent_at) {
-      return
-    }
-    previous = row.welcome_sent_at
-    if (previous && ctx.now().getTime() - Date.parse(previous) < WELCOME_GAP_MS) return
+  if (outcome === "new") return sendWelcome(ctx, email, null, null)
+  const row = await ctx.store.wlGet(ctx.site.table, email)
+  if (!row) return
+  if (row.unsubscribed_at) {
+    /* Signing up again after unsubscribing puts the address back on the list (owner, 2026-10-08), but only
+       together with a welcome, which tells the person, and at most one welcome per 24 h: a re-sign-up inside
+       that window changes nothing. */
+    if (row.welcome_sent_at && ctx.now().getTime() - Date.parse(row.welcome_sent_at) < WELCOME_GAP_MS) return
+    return sendWelcome(ctx, email, row.welcome_sent_at, row.unsubscribed_at)
   }
-  await sendWelcome(ctx, email, previous)
+  /* Still subscribed: nothing, unless the welcome never went out (a spent pool or a failed send); then it goes now. */
+  if (row.welcome_sent_at) return
+  return sendWelcome(ctx, email, null, null)
 }
 
-async function sendWelcome(ctx: Ctx, email: string, previous: string | null): Promise<void> {
+/** `resubscribedFrom` is the unsubscribed_at being cleared, or null for an address that is already subscribed. */
+async function sendWelcome(ctx: Ctx, email: string, previous: string | null, resubscribedFrom: string | null): Promise<void> {
   const { store, site, mailer, secrets } = ctx
-  const now = ctx.now()
-  const stamp = now.toISOString()
-  if (!(await store.wlClaimWelcome(site.table, email, stamp, previous))) return
+  const stamp = ctx.now().toISOString()
+  const resubscribe = resubscribedFrom !== null
+  if (!(await store.wlClaimWelcome(site.table, email, stamp, previous, resubscribe))) return
+  /* Any failure below undoes the claim, re-subscription included. */
+  const release = () => store.wlReleaseWelcome(site.table, email, stamp, previous, resubscribe ? resubscribedFrom : undefined)
   const { pool, limit } = poolFor(site, ctx.env)
-  if (!(await store.takeSend(pool, limit))) {
-    await store.wlReleaseWelcome(site.table, email, stamp, previous)
-    return
-  }
+  const day = await store.takeSend(pool, limit)
+  if (!day) return release()
   const copy = site.copy.welcome!
   const { text, html } = renderMail(copy, unsubscribePageUrl(site, secrets.tokenSecret, email), site.signer, true)
   const sent = await mailer.send({
@@ -147,11 +149,11 @@ async function sendWelcome(ctx: Ctx, email: string, previous: string | null): Pr
     text,
     html,
     headers: unsubscribeHeaders(unsubscribeApiUrl(site, secrets.tokenSecret, email)),
-    idempotencyKey: idempotencyKey(site.site, email, "welcome", utcDay(now)),
+    idempotencyKey: idempotencyKey(site.site, pool, email, "welcome", day),
   })
   if (!sent.ok) {
-    await store.giveBack(pool, utcDay(now))
-    await store.wlReleaseWelcome(site.table, email, stamp, previous)
+    await store.giveBack(pool, day)
+    await release()
   }
 }
 
@@ -190,7 +192,8 @@ export async function afterNewsletterSignup(ctx: Ctx, email: string, source: str
     const cutoff = new Date(now.getTime() - CONFIRMED_COOLDOWN_MS).toISOString()
     if (!(await store.nlStampConfirmed(site.table, email, stamp, cutoff))) return
     const undo = () => store.nlRestoreConfirmed(site.table, email, stamp, row.confirm_sent_at)
-    if (!(await store.takeSend(pool, limit))) return undo()
+    const day = await store.takeSend(pool, limit)
+    if (!day) return undo()
     const copy = site.copy.already!
     const { text, html } = renderMail(copy, unsubscribePageUrl(site, secrets.tokenSecret, email), site.signer, true)
     const sent = await mailer.send({
@@ -201,10 +204,10 @@ export async function afterNewsletterSignup(ctx: Ctx, email: string, source: str
       text,
       html,
       headers: unsubscribeHeaders(unsubscribeApiUrl(site, secrets.tokenSecret, email)),
-      idempotencyKey: idempotencyKey(site.site, email, "already", utcDay(now)),
+      idempotencyKey: idempotencyKey(site.site, pool, email, "already", day),
     })
     if (!sent.ok) {
-      await store.giveBack(pool, utcDay(now))
+      await store.giveBack(pool, day)
       await undo()
     }
     return
@@ -222,7 +225,8 @@ export async function afterNewsletterSignup(ctx: Ctx, email: string, source: str
   }
   /* Each restore call builds its own deadline, so a slow failed send can't leave the row stuck (audit fault 1). */
   const undo = () => store.nlRestorePending(site.table, email, tokenHash, row)
-  if (!(await store.takeSend(pool, limit))) return undo()
+  const day = await store.takeSend(pool, limit)
+  if (!day) return undo()
   const copy = site.copy.confirm!
   const { text, html } = renderMail(copy, confirmUrl(site, token), site.signer)
   const sent = await mailer.send({
@@ -232,10 +236,10 @@ export async function afterNewsletterSignup(ctx: Ctx, email: string, source: str
     subject: copy.subject,
     text,
     html,
-    idempotencyKey: idempotencyKey(site.site, email, "confirm", tokenHash),
+    idempotencyKey: idempotencyKey(site.site, pool, email, "confirm", tokenHash),
   })
   if (!sent.ok) {
-    await store.giveBack(pool, utcDay(now))
+    await store.giveBack(pool, day)
     await undo()
   }
 }
@@ -243,6 +247,8 @@ export async function afterNewsletterSignup(ctx: Ctx, email: string, source: str
 /* ───────────────────────── confirm (newsletter) ───────────────────────── */
 
 const pageCopy = (site: Site, key: keyof Site["copy"]): PageCopy => (site.copy[key] as PageCopy | undefined) ?? DEFAULT_PAGES[key]!
+/** Missing or malformed settings, or the database down: 503 "unavailable", as the contract says. */
+const unavailablePage = (site: Site) => htmlResponse(page(pageCopy(site, "unavailable")), 503)
 
 function resultRedirect(site: Site, result: string): Response {
   const target = `${site.url}${site.paths.resultPage ?? "/"}?${site.kind}=${encodeURIComponent(result)}#${site.kind}`
@@ -263,13 +269,15 @@ export async function newsletterConfirm(req: Request, site: Site, deps: Deps): P
   const t = form?.get("t") ?? url.searchParams.get("t") ?? ""
   let result: "confirmed" | "expired" = "expired"
   const ctx = context(site, deps)
-  if (ctx && TOKEN_RE.test(t)) {
+  if (!ctx) return unavailablePage(site)
+  if (TOKEN_RE.test(t)) {
     try {
       const now = ctx.now()
       const since = new Date(now.getTime() - CONFIRM_WINDOW_MS).toISOString()
       if (await ctx.store.nlConfirm(site.table, hashToken(t), since, now.toISOString())) result = "confirmed"
     } catch (err) {
       console.error("[signup-kit] confirm failed:", err instanceof Error ? err.message : "error")
+      return unavailablePage(site)
     }
   }
   if (ownPage) return resultRedirect(site, result)
@@ -297,15 +305,17 @@ export async function unsubscribe(req: Request, site: Site, deps: Deps): Promise
   const e = normalizeEmail(form?.get("e") ?? url.searchParams.get("e"))
   const t = form?.get("t") ?? url.searchParams.get("t") ?? ""
   const ctx = context(site, deps)
+  const unavailable = () => (oneClick ? new Response(null, { status: 503, headers: NO_STORE }) : unavailablePage(site))
+  if (!ctx) return unavailable()
   let result: "unsubscribed" | "invalid" = "invalid"
-  if (ctx && e && unsubscribeTokenValid(ctx.secrets.tokenSecret, e, t)) {
+  if (e && unsubscribeTokenValid(ctx.secrets.tokenSecret, e, t)) {
     try {
       const nowIso = ctx.now().toISOString()
       const r = site.kind === "newsletter" ? await ctx.store.nlUnsubscribe(site.table, e, "user", nowIso) : await ctx.store.wlUnsubscribe(site.table, e, nowIso)
       if (r !== "unknown") result = "unsubscribed"
     } catch (err) {
       console.error("[signup-kit] unsubscribe failed:", err instanceof Error ? err.message : "error")
-      if (oneClick) return new Response(null, { status: 503, headers: NO_STORE })
+      return unavailable()
     }
   }
   if (oneClick) return new Response(null, { status: result === "unsubscribed" ? 200 : 400, headers: NO_STORE })

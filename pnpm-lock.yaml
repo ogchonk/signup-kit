@@ -14,16 +14,19 @@ importers:
       '@vercel/functions':
         specifier: ^3.9.11
         version: 3.9.11
-      disposable-email-domains:
-        specifier: ^1.0.62
-        version: 1.0.62
     devDependencies:
+      '@supabase/postgrest-js':
+        specifier: 2.117.3
+        version: 2.117.3
       '@types/node':
         specifier: 22.10.0
         version: 22.10.0
       '@types/pg':
         specifier: 8.11.10
         version: 8.11.10
+      disposable-email-domains:
+        specifier: ^1.0.62
+        version: 1.0.62
       next:
         specifier: 16.2.6
         version: 16.2.6(react-dom@19.3.0(react@19.3.0))(react@19.3.0)

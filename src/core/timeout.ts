@@ -9,10 +9,5 @@ export const SEND_MS = 5000
 
 export const freshSignal = (ms: number): AbortSignal => AbortSignal.timeout(ms)
 
-/** Worst case for one sign-up, reply and after-reply work together: DNS + three database calls + send + restore. */
-export function worstCaseMs(dnsMs: number): number {
-  return dnsMs + 3 * DB_MS + SEND_MS + DB_MS
-}
-
 /** The literal every route must export as maxDuration (seconds). */
 export const ROUTE_MAX_DURATION_S = 30

@@ -1,37 +1,94 @@
 {
   "name": "@ogchonk/signup-kit",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Uniform waitlist and newsletter sign-up for Vercel sites (Next.js App Router or plain functions), backed by Supabase and Resend.",
   "license": "MIT",
   "type": "module",
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=20"
+  },
   "exports": {
-    "./core": { "types": "./dist/core.d.ts", "import": "./dist/core.js", "require": "./dist/core.cjs" },
-    "./next": { "types": "./dist/next.d.ts", "import": "./dist/next.js", "require": "./dist/next.cjs" },
-    "./node": { "types": "./dist/node.d.ts", "import": "./dist/node.js", "require": "./dist/node.cjs" },
-    "./form": { "types": "./dist/form.d.ts", "import": "./dist/form.js", "require": "./dist/form.cjs" },
-    "./testing": { "types": "./dist/testing.d.ts", "import": "./dist/testing.js", "require": "./dist/testing.cjs" },
+    "./core": {
+      "import": {
+        "types": "./dist/core.d.ts",
+        "default": "./dist/core.js"
+      },
+      "require": {
+        "types": "./dist/core.d.cts",
+        "default": "./dist/core.cjs"
+      }
+    },
+    "./next": {
+      "import": {
+        "types": "./dist/next.d.ts",
+        "default": "./dist/next.js"
+      },
+      "require": {
+        "types": "./dist/next.d.cts",
+        "default": "./dist/next.cjs"
+      }
+    },
+    "./node": {
+      "import": {
+        "types": "./dist/node.d.ts",
+        "default": "./dist/node.js"
+      },
+      "require": {
+        "types": "./dist/node.d.cts",
+        "default": "./dist/node.cjs"
+      }
+    },
+    "./form": {
+      "import": {
+        "types": "./dist/form.d.ts",
+        "default": "./dist/form.js"
+      },
+      "require": {
+        "types": "./dist/form.d.cts",
+        "default": "./dist/form.cjs"
+      }
+    },
+    "./testing": {
+      "import": {
+        "types": "./dist/testing.d.ts",
+        "default": "./dist/testing.js"
+      },
+      "require": {
+        "types": "./dist/testing.d.cts",
+        "default": "./dist/testing.cjs"
+      }
+    },
     "./form.iife.js": "./dist/form.iife.js",
     "./sql/*": "./sql/*"
   },
-  "files": ["dist", "sql", "templates"],
+  "files": [
+    "dist",
+    "sql"
+  ],
   "scripts": {
     "build": "tsup",
     "test": "vitest run test --exclude test/db",
-    "test:db": "vitest run test/db",
+    "test:db": "vitest run test/db --no-file-parallelism",
     "typecheck": "tsc --noEmit",
     "lint": "tsc --noEmit -p tsconfig.lint.json"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.117.2",
-    "@vercel/functions": "^3.9.11",
-    "disposable-email-domains": "^1.0.62"
+    "@vercel/functions": "^3.9.11"
   },
-  "peerDependencies": { "next": ">=16" },
-  "peerDependenciesMeta": { "next": { "optional": true } },
+  "peerDependencies": {
+    "next": ">=16"
+  },
+  "peerDependenciesMeta": {
+    "next": {
+      "optional": true
+    }
+  },
   "devDependencies": {
+    "@supabase/postgrest-js": "2.117.3",
     "@types/node": "22.10.0",
     "@types/pg": "8.11.10",
+    "disposable-email-domains": "^1.0.62",
     "next": "16.2.6",
     "pg": "8.13.1",
     "tsup": "8.5.0",

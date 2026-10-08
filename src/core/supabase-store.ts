@@ -14,11 +14,27 @@ function check(error: PgError, what: string): void {
   if (error) throw new StoreError(`${what}: ${error.message ?? "database error"}`, error.code)
 }
 
-/** The PostgREST "or" filter for "stamp is null or older than cutoff". */
-const staleOr = (column: string, cutoff: string) => `${column}.is.null,${column}.lt.${cutoff}`
+/* "Stamp is null or older than the cutoff" is two compare-and-set updates, never one or=(...) filter: on
+   PostgREST v12 an update filtered with or=(...) either fails (42703) or applies the filter to the updated
+   row, so a successful claim reads as lost. Each step is atomic on its own, and a second request can't win
+   after the first has stamped the row. Found by the PostgREST suite in test/db/store.test.ts. */
+type Upd = ReturnType<ReturnType<DbClient["from"]>["update"]>
 
-export function supabaseStore(url: string, key: string, client?: SupabaseClient): Store {
-  const db = client ?? createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } })
+async function claimStale(build: () => Upd, column: string, cutoff: string, what: string, signal: () => AbortSignal): Promise<boolean> {
+  for (const step of [(q: Upd) => q.is(column, null), (q: Upd) => q.lt(column, cutoff)]) {
+    const { data, error } = await step(build()).select("email").abortSignal(signal())
+    check(error, what)
+    if ((data?.length ?? 0) > 0) return true
+  }
+  return false
+}
+
+/** Anything with supabase-js's `from` and `rpc` — a SupabaseClient, or a bare PostgrestClient in tests. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type DbClient = Pick<SupabaseClient<any, "public", any>, "from" | "rpc">
+
+export function supabaseStore(url: string, key: string, client?: DbClient): Store {
+  const db: DbClient = client ?? createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } })
   const sig = () => freshSignal(DB_MS)
 
   return {
@@ -30,7 +46,7 @@ export function supabaseStore(url: string, key: string, client?: SupabaseClient)
     async takeSend(pool, limit) {
       const { data, error } = await db.rpc("signup_take_send", { p_pool: pool, p_limit: limit }).abortSignal(sig())
       check(error, "take_send")
-      return data === true
+      return typeof data === "string" && /^\d{4}-\d{2}-\d{2}$/.test(data) ? data : null
     },
     async giveBack(pool, day) {
       const { error } = await db.rpc("signup_give_back_send", { p_pool: pool, p_day: day }).abortSignal(sig())
@@ -48,19 +64,18 @@ export function supabaseStore(url: string, key: string, client?: SupabaseClient)
       check(error, "waitlist read")
       return (data as { unsubscribed_at: string | null; welcome_sent_at: string | null } | null) ?? null
     },
-    async wlResubscribe(table, email) {
-      const { error } = await db.from(table).update({ unsubscribed_at: null }).eq("email", email).not("unsubscribed_at", "is", null).abortSignal(sig())
-      check(error, "waitlist resubscribe")
-    },
-    async wlClaimWelcome(table, email, now, previous) {
-      let q = db.from(table).update({ welcome_sent_at: now }).eq("email", email).is("unsubscribed_at", null)
+    async wlClaimWelcome(table, email, now, previous, resubscribe) {
+      let q = resubscribe
+        ? db.from(table).update({ welcome_sent_at: now, unsubscribed_at: null }).eq("email", email).not("unsubscribed_at", "is", null)
+        : db.from(table).update({ welcome_sent_at: now }).eq("email", email).is("unsubscribed_at", null)
       q = previous === null ? q.is("welcome_sent_at", null) : q.eq("welcome_sent_at", previous)
       const { data, error } = await q.select("email").abortSignal(sig())
       check(error, "waitlist claim")
       return (data?.length ?? 0) > 0
     },
-    async wlReleaseWelcome(table, email, claimed, previous) {
-      const { error } = await db.from(table).update({ welcome_sent_at: previous }).eq("email", email).eq("welcome_sent_at", claimed).abortSignal(sig())
+    async wlReleaseWelcome(table, email, claimed, previous, unsubscribedAt) {
+      const back = unsubscribedAt === undefined ? { welcome_sent_at: previous } : { welcome_sent_at: previous, unsubscribed_at: unsubscribedAt }
+      const { error } = await db.from(table).update(back).eq("email", email).eq("welcome_sent_at", claimed).abortSignal(sig())
       check(error, "waitlist release")
     },
     async wlUnsubscribe(table, email, now) {
@@ -78,16 +93,8 @@ export function supabaseStore(url: string, key: string, client?: SupabaseClient)
       return (data as NlRow | null) ?? null
     },
     async nlStampConfirmed(table, email, now, cutoff) {
-      const { data, error } = await db
-        .from(table)
-        .update({ confirm_sent_at: now, updated_at: now })
-        .eq("email", email)
-        .eq("status", "confirmed")
-        .or(staleOr("confirm_sent_at", cutoff))
-        .select("email")
-        .abortSignal(sig())
-      check(error, "newsletter stamp")
-      return (data?.length ?? 0) > 0
+      const build = () => db.from(table).update({ confirm_sent_at: now, updated_at: now }).eq("email", email).eq("status", "confirmed")
+      return claimStale(build, "confirm_sent_at", cutoff, "newsletter stamp", sig)
     },
     async nlRestoreConfirmed(table, email, claimed, previous) {
       const { error } = await db
@@ -100,16 +107,13 @@ export function supabaseStore(url: string, key: string, client?: SupabaseClient)
       check(error, "newsletter restore stamp")
     },
     async nlToPending(table, email, expect, cutoff, f) {
-      const { data, error } = await db
-        .from(table)
-        .update({ status: "pending", ...f, unsubscribed_at: null, unsubscribe_reason: null, updated_at: f.confirm_sent_at })
-        .eq("email", email)
-        .eq("status", expect)
-        .or(staleOr("confirm_sent_at", cutoff))
-        .select("email")
-        .abortSignal(sig())
-      check(error, "newsletter to pending")
-      return (data?.length ?? 0) > 0
+      const build = () =>
+        db
+          .from(table)
+          .update({ status: "pending", ...f, unsubscribed_at: null, unsubscribe_reason: null, updated_at: f.confirm_sent_at })
+          .eq("email", email)
+          .eq("status", expect)
+      return claimStale(build, "confirm_sent_at", cutoff, "newsletter to pending", sig)
     },
     async nlInsertPending(table, email, source, f) {
       const { error } = await db

@@ -35,19 +35,21 @@ export type PendingFields = {
 export interface Store {
   /** Read-only: is there room left in today's pool? */
   poolOpen(pool: string, limit: number): Promise<boolean>
-  /** Atomically takes one slot; false when the pool is spent. */
-  takeSend(pool: string, limit: number): Promise<boolean>
-  /** Gives one slot back to the given UTC day (yyyy-mm-dd). */
+  /** Atomically takes one slot. Returns the UTC day (yyyy-mm-dd) it was charged to, or null when the pool is spent. */
+  takeSend(pool: string, limit: number): Promise<string | null>
+  /** Gives one slot back to the day takeSend charged it to. */
   giveBack(pool: string, day: string): Promise<void>
 
   wlInsert(table: string, row: { email: string; source: string; user_agent: string | null; referrer: string | null }): Promise<"new" | "repeat">
   wlGet(table: string, email: string): Promise<WlRow | null>
-  /** Clears unsubscribed_at. */
-  wlResubscribe(table: string, email: string): Promise<void>
-  /** Sets welcome_sent_at = now only while the address is subscribed and the previous stamp equals `previous`. */
-  wlClaimWelcome(table: string, email: string, now: string, previous: string | null): Promise<boolean>
-  /** Puts welcome_sent_at back to `previous`, only if it still holds `claimed`. */
-  wlReleaseWelcome(table: string, email: string, claimed: string, previous: string | null): Promise<void>
+  /**
+   * One conditional update: sets welcome_sent_at = now while the stamp still equals `previous`.
+   * With `resubscribe`, it also clears unsubscribed_at and only matches an unsubscribed row; without it,
+   * it only matches a subscribed row. So re-subscribing happens only together with a welcome (decision 6).
+   */
+  wlClaimWelcome(table: string, email: string, now: string, previous: string | null, resubscribe: boolean): Promise<boolean>
+  /** Undoes a claim, only while welcome_sent_at still holds `claimed`: the stamp goes back to `previous`, and unsubscribed_at to `unsubscribedAt` when given. */
+  wlReleaseWelcome(table: string, email: string, claimed: string, previous: string | null, unsubscribedAt?: string | null): Promise<void>
   wlUnsubscribe(table: string, email: string, now: string): Promise<"done" | "unknown">
 
   nlFind(table: string, email: string): Promise<NlRow | null>

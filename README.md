@@ -49,15 +49,20 @@ export const site = defineSite({
 
 Environment (names configurable per site): `RESEND_API_KEY`, `SIGNUP_SECRET`, `SUPABASE_URL`,
 `SUPABASE_SECRET_KEY` (falls back to `SUPABASE_SERVICE_ROLE_KEY`), and for newsletters
-`RESEND_WEBHOOK_SECRET`. Missing secrets answer 503, never a crash.
+`RESEND_WEBHOOK_SECRET`. Missing or malformed secrets answer 503, never a crash.
 
-Database: `sql/001_shared_infra.sql` once per project, then `sql/010_waitlist_table.sql.tmpl` or
-`sql/020_newsletter_table.sql.tmpl` per site. All are idempotent.
+Database (all idempotent): `sql/001_shared_infra.sql` once per project. Per waitlist:
+`sql/010_waitlist_table.sql.tmpl` (structure; safe while a site's old code is still live), then
+`sql/011_waitlist_constraints.sql.tmpl` at that site's cutover (row checks old code may violate).
+Per newsletter: `sql/020_newsletter_table.sql.tmpl`.
+
+Non-production traffic (`VERCEL_ENV` other than `production`) shares one `dev` pool of 5 sends a day.
 
 ## Develop
 
-`pnpm test` (unit), `pnpm test:db` (real Postgres; `DATABASE_URL` or a local
-`postgres:16` on port 55432), `pnpm typecheck`, `pnpm lint`, `pnpm build`.
+`pnpm test` (unit), `pnpm test:db` (real Postgres plus PostgREST: `DATABASE_URL` and
+`POSTGREST_URL`, or local containers on ports 55432 and 53000 — see `.github/workflows/ci.yml` for the
+settings), `pnpm typecheck`, `pnpm lint`, `pnpm build`.
 
 Site tests use `@ogchonk/signup-kit/testing`: `fakeStore()`, `fakeMailer()`,
 `fakeResolver(["nomail.example"])`, `fakeEnv()`, `runContract(handler)`.

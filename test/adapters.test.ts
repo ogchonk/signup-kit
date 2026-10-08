@@ -52,6 +52,19 @@ describe("node adapter over a real HTTP server", () => {
     expect(h.mailer.sent.some((m) => m.to === "slow@example.com")).toBe(true)
     h.mailer.delayMs = 0
   })
+  it("a 3 KB text/plain body gets 415 — content type before size, the same as the core (review M5)", async () => {
+    const res = await fetch(`${base}/api/subscribe`, { method: "POST", headers: { "content-type": "text/plain" }, body: "x".repeat(3000) })
+    expect(res.status).toBe(415)
+    expect(await res.text()).toBe('{"ok":false,"error":"invalid"}')
+  })
+  it("answers 503 for a malformed SUPABASE_URL, never a crash (review M2)", async () => {
+    const handler = createWaitlistHandler(site, { resolver: h.deps.resolver, env: { ...h.deps.env, SUPABASE_URL: "nope" }, defer: () => {} })
+    const s = createServer((req, res) => void handler(req, res))
+    await new Promise<void>((r) => s.listen(0, r))
+    const res = await fetch(`http://127.0.0.1:${(s.address() as AddressInfo).port}/`, { method: "POST", headers: { "content-type": "application/json" }, body: '{"email":"a@example.com"}' })
+    expect(res.status).toBe(503)
+    await new Promise<void>((r) => s.close(() => r()))
+  })
   it("answers 503 when secrets are missing, never a crash", async () => {
     const handler = createWaitlistHandler(site, { ...h.deps, env: {} })
     const s = createServer((req, res) => void handler(req, res))
@@ -63,6 +76,24 @@ describe("node adapter over a real HTTP server", () => {
 })
 
 describe("next adapter", () => {
+  it("answers 503 for a malformed SUPABASE_URL, never Next's 500 (review M2)", async () => {
+    const { createWaitlistPost, createUnsubscribe, createNewsletterConfirm } = await import("../src/next")
+    const { newsletterSite } = await import("./helpers")
+    const h = harness()
+    const env = { ...h.deps.env, SUPABASE_URL: "nope" }
+    const res = await createWaitlistPost(site, { resolver: h.deps.resolver, env })(new Request("https://ntabc.co/api/subscribe", { method: "POST", headers: { "content-type": "application/json" }, body: '{"email":"a@example.com"}' }))
+    expect(res.status).toBe(503)
+    expect(await res.text()).toBe('{"ok":false,"error":"unavailable"}')
+    const form = { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" } }
+    expect((await createUnsubscribe(site, { env }).POST(new Request("https://ntabc.co/api/unsubscribe", { ...form, body: "List-Unsubscribe=One-Click" }))).status).toBe(503)
+    expect((await createNewsletterConfirm(newsletterSite(), { env }).POST(new Request("https://robbychoate.com/api/newsletter/confirm", { ...form, body: `t=${"A".repeat(43)}` }))).status).toBe(503)
+  })
+  it("a 3 KB text/plain body gets 415, matching the node adapter (review M5)", async () => {
+    const { createWaitlistPost } = await import("../src/next")
+    const h = harness()
+    const res = await createWaitlistPost(site, { store: h.store, mailer: h.mailer, resolver: h.deps.resolver, env: h.deps.env })(new Request("https://ntabc.co/api/subscribe", { method: "POST", headers: { "content-type": "text/plain" }, body: "x".repeat(3000) }))
+    expect(res.status).toBe(415)
+  })
   it("defers through next/server after()", async () => {
     const { createWaitlistPost } = await import("../src/next")
     const h = harness()

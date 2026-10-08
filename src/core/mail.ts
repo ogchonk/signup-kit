@@ -64,8 +64,9 @@ export function resendMailer(apiKey: string, fetchImpl: typeof fetch = fetch, ms
 
 export const sha256 = (s: string) => createHash("sha256").update(s).digest("hex")
 
-export function idempotencyKey(site: string, email: string, kind: "confirm" | "welcome" | "already", part: string): string {
-  return sha256(`${site}|${email}|${kind}|${part}`)
+/** The pool is part of the key, so a preview (dev pool) and a production send of the same mail never share one. */
+export function idempotencyKey(site: string, pool: string, email: string, kind: "confirm" | "welcome" | "already", part: string): string {
+  return sha256(`${site}|${pool}|${email}|${kind}|${part}`)
 }
 
 /** Plain text first, the same words in minimal HTML so the link is a button. */
