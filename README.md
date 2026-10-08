@@ -10,7 +10,7 @@ The design, the behaviour contract and the review record are in the plan:
 ## Install
 
 ```json
-"@ogchonk/signup-kit": "https://github.com/ogchonk/signup-kit/releases/download/v0.1.0/ogchonk-signup-kit-0.1.0.tgz"
+"@ogchonk/signup-kit": "https://github.com/ogchonk/signup-kit/releases/download/v0.1.1/ogchonk-signup-kit-0.1.1.tgz"
 ```
 
 Releases are immutable and built in GitHub Actions with a provenance attestation; lockfiles pin
