@@ -1,0 +1,46 @@
+-- signup-kit: newsletter table template; {{table}} must match ^[a-z_][a-z0-9_]{0,62}$. Idempotent; safe to re-run.
+-- Mirrors robbychoate.com's live rc_subscribers (2026-10-08), so applying it there changes nothing.
+create table if not exists public.{{table}} (
+  id uuid primary key default gen_random_uuid(),
+  email text not null,
+  status text not null default 'pending',
+  source text not null default 'footer',
+  confirm_token_hash text,
+  confirm_sent_at timestamptz,
+  confirmed_at timestamptz,
+  unsubscribed_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  confirm_sends smallint not null default 0,
+  unsubscribe_reason text
+);
+alter table public.{{table}} add column if not exists confirm_sends smallint not null default 0;
+alter table public.{{table}} add column if not exists unsubscribe_reason text;
+do $$ begin
+  if not exists (select 1 from pg_indexes where schemaname = 'public' and tablename = '{{table}}'
+                 and indexdef ilike 'create unique index%(%email%)%') then
+    execute 'alter table public.{{table}} add constraint {{table}}_email_key unique (email)';
+  end if;
+  if not exists (select 1 from pg_constraint where conname = '{{table}}_email_lower') then
+    execute 'alter table public.{{table}} add constraint {{table}}_email_lower check (email = lower(email))';
+  end if;
+  if not exists (select 1 from pg_constraint where conname = '{{table}}_email_shape') then
+    execute $q$alter table public.{{table}} add constraint {{table}}_email_shape check (email ~ '^[^\s@]+@[^\s@]+\.[^\s@]+$')$q$;
+  end if;
+  if not exists (select 1 from pg_constraint where conname = '{{table}}_status_check') then
+    execute $q$alter table public.{{table}} add constraint {{table}}_status_check check (status = any (array['pending','confirmed','unsubscribed']))$q$;
+  end if;
+  if not exists (select 1 from pg_constraint where conname = '{{table}}_unsubscribe_reason_check') then
+    execute $q$alter table public.{{table}} add constraint {{table}}_unsubscribe_reason_check check (unsubscribe_reason is null or unsubscribe_reason = any (array['user','bounced','complained']))$q$;
+  end if;
+  if not exists (select 1 from pg_indexes where schemaname = 'public' and indexname = '{{table}}_created_at_idx') then
+    execute 'create index {{table}}_created_at_idx on public.{{table}} (created_at)';
+  end if;
+  -- pg_cron's schedule() upserts by job name, so re-running updates the job in place.
+  if exists (select 1 from pg_extension where extname = 'pg_cron') then
+    perform cron.schedule('{{table}}_purge_pending', '17 4 * * *',
+      $q$delete from public.{{table}} where status = 'pending' and coalesce(confirm_sent_at, created_at) < now() - interval '48 hours'$q$);
+  end if;
+end $$;
+alter table public.{{table}} enable row level security;
+revoke all on public.{{table}} from anon, authenticated;
