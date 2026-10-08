@@ -2,6 +2,16 @@ import { describe, expect, it } from "vitest"
 import { esc, idempotencyKey, renderMail, resendMailer } from "../src/core/mail"
 
 describe("mail", () => {
+  it("generated email copy has no em dash, and the signer is a plain line (G-30)", () => {
+    for (const noteFirst of [false, true]) {
+      const { text, html } = renderMail({ subject: "s", greeting: "Hi", body: "Body", button: "Go", note: "Note" }, "https://x.test/a", "Robby Choate", noteFirst)
+      expect(text).not.toContain("\u2014")
+      expect(html).not.toContain("\u2014")
+      expect(text.trimEnd().split("\n").at(-1)).toBe("Robby Choate")
+      expect(html).toContain("<p>Robby Choate</p>")
+    }
+  })
+
   it("escapes every HTML-significant character, including inside an href (audit fault 7)", () => {
     expect(esc(`"'<>&`)).toBe("&quot;&#39;&lt;&gt;&amp;")
     const { html } = renderMail({ subject: "s", greeting: "g", body: "b", button: "go", note: "n" }, 'https://x.test/a"onmouseover="alert(1)', "S")

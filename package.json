@@ -1,6 +1,6 @@
 {
   "name": "@ogchonk/signup-kit",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Uniform waitlist and newsletter sign-up for Vercel sites (Next.js App Router or plain functions), backed by Supabase and Resend.",
   "license": "MIT",
   "type": "module",
